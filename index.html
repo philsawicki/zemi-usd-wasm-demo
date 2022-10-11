@@ -23,7 +23,13 @@
 
 
         let params = (new URL(document.location)).searchParams;
-        let filename = params.get('file') || 'zemi.usdz' || 'usd_cookie.usdz';
+        let filename = params.get('file');
+        if (!filename) {
+            filename = 'zemi.usdz' || 'usd_cookie.usdz';
+            if (window.location.host.includes('github.io')) {
+                filename = `zemi-usd-wasm-demo/${filename}`;
+            }
+        }
 
 
         /**
