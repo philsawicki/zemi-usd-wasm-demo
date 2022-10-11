@@ -4,7 +4,9 @@
 
 ## About
 
-This project is a demonstration web experience of the [Zemí artifact provided by the MET](https://www.metmuseum.org/blogs/collection-insights/2020/augmented-reality-zemi-arte-del-mar), using a WebAssembly build of USD. 
+This project is a demonstration web experience of the [Zemí artifact provided by the MET](https://www.metmuseum.org/blogs/collection-insights/2020/augmented-reality-zemi-arte-del-mar), using a WebAssembly build of USD.
+
+Head to [https://philsawicki.github.io/zemi-usd-wasm-demo](https://philsawicki.github.io/zemi-usd-wasm-demo) experience the live project, and use the <kbd>W</kbd>,  <kbd>A</kbd>,<kbd>S</kbd>,<kbd>D</kbd>, or arrow keys of the keyboard along with dragging the mouse cursor to navigate the environment.
 
 ## Building
 
