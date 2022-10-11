@@ -22,8 +22,9 @@
         import { RenderDelegateInterface } from './ThreeJsRenderDelegate.js';
 
 
-        let params = (new URL(document.location)).searchParams;
-        let filename = params.get('file') || 'zemi.usdz' || 'usd_cookie.usdz';
+        let renderer;
+        const params = new URLSearchParams(window.location.search);
+        const filename = params.get('file') || 'zemi.usdz' || 'usd_cookie.usdz';
 
 
         /**
@@ -66,13 +67,22 @@
         async function initializeScene() {
             const camera = window.camera = new THREE.PerspectiveCamera(27, window.innerWidth / window.innerHeight, 1, 3500);
             if (params.has('cameraX')) {
-                camera.position.x = params.get('cameraX');
+                const cameraX = parseInt(params.get('cameraX'), 10);
+                if (!isNaN(cameraX)) {
+                    camera.position.x = cameraX;
+                }
             }
             if (params.has('cameraY')) {
-                camera.position.y = params.get('cameraY');
+                const cameraY = parseInt(params.get('cameraY'), 10);
+                if (!isNaN(cameraY)) {
+                    camera.position.y = cameraY;
+                }
             }
             if (params.has('cameraZ')) {
-                camera.position.z = params.get('cameraZ');
+                const cameraZ = parseInt(params.get('cameraZ'), 10);
+                if (!isNaN(cameraZ)) {
+                    camera.position.z = cameraZ;
+                }
             }
 
             const scene = window.scene = new THREE.Scene();
@@ -81,7 +91,7 @@
 
             scene.add(new THREE.AmbientLight(0x111111));
 
-            let pointLight = new THREE.PointLight(0xff8888);
+            const pointLight = new THREE.PointLight(0xff8888);
             pointLight.position.set(-30, 20, 220);
             pointLight.castShadow = true;
             pointLight.shadow.camera.near = 8;
@@ -94,7 +104,7 @@
             pointLight.shadow.samples = 8;
             scene.add(pointLight);
 
-            const renderer = window.renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer = new THREE.WebGLRenderer({ antialias: true });
             renderer.setPixelRatio(window.devicePixelRatio);
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.toneMapping = THREE.CineonToneMapping;
@@ -110,14 +120,16 @@
 
             window.addEventListener('resize', onWindowResize);
 
-            document.querySelector('a-sky').setAttribute('theta-length', 360.0);
-
+            const skyElement = document.querySelector('a-sky');
+            if (skyElement !== null) {
+                skyElement.setAttribute('theta-length', 360.0);
+            }
         }
 
         // Press space to pause/enable rendering (useful when looking at animated scenes)
         let stop = false;
         document.body.addEventListener('keyup', e => {
-            if (e.keyCode === 32){
+            if (e.keyCode === 32) {
                 stop = !stop;
             }
         });
@@ -135,7 +147,7 @@
                 window._controls.update();
             }
 
-            let secs = new Date().getTime() / 1000;
+            const secs = new Date().getTime() / 1000;
             await new Promise(resolve => setTimeout(resolve, 10));
             const time = secs * (1000 / timeout) % endTimecode;
             window.driver.SetTime(time);
@@ -160,8 +172,7 @@
          * Render the A-Frame scene.
          */
         function render() {
-            const time = Date.now() * 0.001;
-            window.renderer.render(window.scene, window.camera);
+            renderer.render(window.scene, window.camera);
         }
 
 
@@ -233,6 +244,45 @@
             },
         });
 
+        AFRAME.registerComponent('change-color-on-hover', {
+            schema: {
+                color: { default: 'red', },
+                opacity: { default: 0.7, },
+                url: { default: null, },
+            },
+
+            init: function () {
+                const data = this.data;
+                const el = this.el;
+                const defaultColor = el.getAttribute('material').color;
+                const defaultOpacity = el.getAttribute('material').opacity;
+
+                el.addEventListener('mouseenter', () => {
+                    if (data.color !== undefined) {
+                        el.setAttribute('color', data.color);
+                    }
+                    if (data.opacity !== undefined) {
+                        el.setAttribute('opacity', data.opacity);
+                    }
+                });
+
+                el.addEventListener('mouseleave', () => {
+                    if (defaultColor !== undefined) {
+                        el.setAttribute('color', defaultColor);
+                    }
+                    if (defaultOpacity !== undefined) {
+                        el.setAttribute('opacity', defaultOpacity);
+                    }
+                });
+
+                el.addEventListener('click', () => {
+                    if (data.url !== null) {
+                        window.open(data.url, '_blank');
+                    }
+                });
+            },
+        });
+
 
         Promise.all([loadUSDPromise(), getUsdModule(), initializeScene()])
             .then(([usdFile, Usd]) => {
@@ -266,13 +316,19 @@
                 }
 
                 const sceneEl = document.querySelector('a-scene');
-                sceneEl.appendChild(usdEntity);
+                if (sceneEl !== null) {
+                    sceneEl.appendChild(usdEntity);
+                }
+                
+                const learnMoreButton = document.getElementById('learn-more');
+                if (learnMoreButton !== null) {
+                    learnMoreButton.setAttribute('change-color-on-hover', 'opacity: 1.0; url: https://www.metmuseum.org/blogs/collection-insights/2020/augmented-reality-zemi-arte-del-mar;');
+                }
             });
     </script>
 
-
     <!-- A-Frame scene setup: -->
-    <a-scene debug="true" inspector="url: https://cdn.jsdelivr.net/gh/aframevr/aframe-inspector@master/dist/aframe-inspector.min.js">
+    <a-scene cursor="rayOrigin: mouse" debug="true" inspector="url: https://cdn.jsdelivr.net/gh/aframevr/aframe-inspector@master/dist/aframe-inspector.min.js">
         <a-assets>
             <a-mixin
                 id="marker"
@@ -287,14 +343,19 @@
             look-controls
             wasd-controls
             position="0.0 4.0 8.0"
-        ></a-entity>
+        >
+            <!-- <a-cursor></a-cursor> -->
+        </a-entity>
 
         <a-entity
             mixin="marker"
             position="-2.5 0.7 0.01"
         ></a-entity>
 
-        <a-entity position="2.0 5.25 2.25448">
+        <a-entity
+            position="2.0 5.7 2.25448"
+        >
+            <!-- Annotation about the artifact: -->
             <a-plane
                 position="1.286 -2.120 -0.01"
                 color="#CCC"
@@ -316,7 +377,30 @@
                 position="0.0 -0.4 0.0"
                 text="anchor: left; width: 2.5; color: #000000; baseline: top; value: Creative sculptural expression for the Taíno peoples was intertwined with spirituality, ceremony, and political power. Spanish accounts describe how zemí figures were used as stands, reliquaries, or personal adornment. This particular zemí was likely used in ceremonies performed at prescribed times throughout the year involving a vegetal entheogen known as cohoba. A ground up hallucinogenic powder or paste would be placed on the top of the stand, and ceremonial participants would inhale the cohoba through snuff tubes. The effects of such ritual acts are visible in the zemí itself: the emaciated look of the figure may represent someone who had been fasting, and watering eyes would have accompanied the inhalation of such substances. The exceptional preservation of this zemí suggests that it was carefully housed and revered, perhaps passed down for centuries. Without evidence of burial, it is likely that the caretakers of this zemí eventually deposited this special figure in a cave, many of the surviving Taíno wooden sculptures have been recovered from cave contexts. \n\n In 1954, Londoner Edna Dakeyne wrote to Rene d'Harnoncourt at The Museum of Primitive Art to offer the sculpture, which accompanies Edna in a 1938 portrait of her painted by English painter Carel Weight. A project in the UK documenting pre-Hispanic sculptural arts in various museum collections performed AMS radiocarbon dating on the Rockefeller zemí cohoba stand, data from the four dates and a Guaiacum growth model produced by the project yielded a range of the date of creation between A.D. 974-1020."
             ></a-entity>
+
+            <!-- "Learn more" button: -->
+            <a-entity
+                id="button-container"
+                position="1.286 -5.0 -0.01"
+            >
+                <a-plane
+                    id="learn-more"
+                    position="0.0 -0.1 0.0"
+                    color="#CCC"
+                    height="10"
+                    width="10"
+                    material="color: #e4002b; opacity: 0.95; height: 10; width: 10"
+                    geometry="height: 0.6; width: 3.04"
+                ></a-plane>
+    
+                <a-entity
+                    id="learn-more-text"
+                    position="-1.0 0.0 0.0"
+                    text="anchor: left; width: 7.5; color: #ffffff; baseline: top; value: Learn more ..."
+                ></a-entity>
+            </a-entity>
         </a-entity>
+
 
         <a-entity
             environment="skyType: gradient; skyColor: #858688; horizonColor: #c0c1c6; ground: hills; groundTexture: walkernoise;"

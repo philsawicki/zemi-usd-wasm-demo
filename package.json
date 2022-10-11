@@ -5,6 +5,7 @@
   "main": "src/index.js",
   "scripts": {
     "build": "webpack --config=webpack.config.js",
+    "build:watch": "npm run build -- --watch --progress",
     "predeploy": "npm run build",
     "deploy": "gh-pages --dist ./dist --add --message \"Update live website\"",
     "serve": "node --experimental-modules server.mjs",
