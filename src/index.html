@@ -33,7 +33,7 @@
          * @return {Promise<ArrayBuffer>} A Promise to be fulfilled with the content of the given USDz file as an ArrayBuffer.
          */
         async function loadUSDPromise(usdzFilename = filename) {
-            const response = await fetch(`/${usdzFilename}`);
+            const response = await fetch(`./${usdzFilename}`);
             return response.arrayBuffer();
         };
 
