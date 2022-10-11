@@ -23,13 +23,7 @@
 
 
         let params = (new URL(document.location)).searchParams;
-        let filename = params.get('file');
-        if (!filename) {
-            filename = 'zemi.usdz' || 'usd_cookie.usdz';
-            if (window.location.host.includes('github.io')) {
-                filename = `zemi-usd-wasm-demo/${filename}`;
-            }
-        }
+        let filename = params.get('file') || 'zemi.usdz' || 'usd_cookie.usdz';
 
 
         /**
@@ -39,7 +33,7 @@
          * @return {Promise<ArrayBuffer>} A Promise to be fulfilled with the content of the given USDz file as an ArrayBuffer.
          */
         async function loadUSDPromise(usdzFilename = filename) {
-            const response = await fetch(`/${usdzFilename}`);
+            const response = await fetch(`./${usdzFilename}`);
             return response.arrayBuffer();
         };
 
