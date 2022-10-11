@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="USD WebAssembly loader">
+    <meta name="author" content="Philippe Sawicki">
+
+    <title>Zemí USD experience</title>
+
+    <!-- Load A-Frame.io libraries: -->
+    <script type="text/javascript" src="https://cdn.jsdelivr.net/gh/aframevr/aframe@1.2.0/dist/aframe-master.min.js"></script>
+    <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/aframe-environment-component@1.3.1/dist/aframe-environment-component.min.js"></script>
+
+    <!-- Load USD WebAssembly libraries: -->
+    <script type="text/javascript" src="coi-serviceworker.min.js"></script>
+    <script type="text/javascript" src="emHdBindings.js"></script>
+</head>
+<body>
+    <script type="module">
+        const { THREE } = AFRAME;
+        import { RenderDelegateInterface } from './ThreeJsRenderDelegate.js';
+
+
+        let params = (new URL(document.location)).searchParams;
+        let filename = params.get('file') || 'zemi.usdz' || 'usd_cookie.usdz';
+
+
+        /**
+         * Load the USDz asset.
+         *
+         * @param {string} usdzFilename Filename of the USDz file to load.
+         * @return {Promise<ArrayBuffer>} A Promise to be fulfilled with the content of the given USDz file as an ArrayBuffer.
+         */
+        async function loadUSDPromise(usdzFilename = filename) {
+            const response = await fetch(`/${usdzFilename}`);
+            return response.arrayBuffer();
+        };
+
+        /**
+         * Load the environment map for the scene.
+         *
+         * @return {Promise<void>} A Promise to be fulfilled once the environment map has been loaded and configured.
+         */
+        function loadEnvMap(hdrTextureFile = 'environments/helicopter-landing-pad-vis-512.hdr') {
+            return new Promise(async (resolve, reject) => {
+                const { RGBELoader } = await import('https://cdn.jsdelivr.net/npm/three@0.125.1/examples/jsm/loaders/RGBELoader.js');
+
+                const pmremGenerator = new THREE.PMREMGenerator(renderer);
+                pmremGenerator.compileCubemapShader();
+                new RGBELoader().load(hdrTextureFile, texture => {
+                    const hdrRenderTarget = pmremGenerator.fromEquirectangular(texture);
+                    texture.mapping = THREE.EquirectangularReflectionMapping;
+                    texture.needsUpdate = true;
+                    window.envMap = hdrRenderTarget.texture;
+                    resolve();
+                });
+            });
+        }
+
+        /**
+         * Initialize the scene.
+         *
+         * @return {Promise<void>} A Promise to be fulfilled once the scene has been initialized.
+         */
+        async function initializeScene() {
+            const camera = window.camera = new THREE.PerspectiveCamera(27, window.innerWidth / window.innerHeight, 1, 3500);
+            if (params.has('cameraX')) {
+                camera.position.x = params.get('cameraX');
+            }
+            if (params.has('cameraY')) {
+                camera.position.y = params.get('cameraY');
+            }
+            if (params.has('cameraZ')) {
+                camera.position.z = params.get('cameraZ');
+            }
+
+            const scene = window.scene = new THREE.Scene();
+            scene.background = new THREE.Color(0xffffff);
+
+
+            scene.add(new THREE.AmbientLight(0x111111));
+
+            let pointLight = new THREE.PointLight(0xff8888);
+            pointLight.position.set(-30, 20, 220);
+            pointLight.castShadow = true;
+            pointLight.shadow.camera.near = 8;
+            pointLight.shadow.camera.far = 1000;
+            pointLight.shadow.mapSize.width = 1024;
+            pointLight.shadow.mapSize.height = 1024;
+            pointLight.shadow.bias = -0.002;
+
+            pointLight.shadow.radius = 4;
+            pointLight.shadow.samples = 8;
+            scene.add(pointLight);
+
+            const renderer = window.renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.toneMapping = THREE.CineonToneMapping;
+            renderer.toneMappingExposure = 2;
+            renderer.shadowMap.enabled = false;
+            renderer.shadowMap.type = THREE.VSMShadowMap;
+
+            // await loadEnvMap();
+
+            document.body.appendChild(renderer.domElement);
+            // const controls = window._controls = new OrbitControls(camera, renderer.domElement);
+            // controls.update();
+
+            window.addEventListener('resize', onWindowResize);
+
+            document.querySelector('a-sky').setAttribute('theta-length', 360.0);
+
+        }
+
+        // Press space to pause/enable rendering (useful when looking at animated scenes)
+        let stop = false;
+        document.body.addEventListener('keyup', e => {
+            if (e.keyCode === 32){
+                stop = !stop;
+            }
+        });
+
+        /**
+         * Animate the scene.
+         */
+        async function animate(timeout = 40, endTimecode) {
+            if (stop) {
+                requestAnimationFrame(animate.bind(null, timeout, endTimecode));
+                return;
+            }
+
+            if (window._controls) {
+                window._controls.update();
+            }
+
+            let secs = new Date().getTime() / 1000;
+            await new Promise(resolve => setTimeout(resolve, 10));
+            const time = secs * (1000 / timeout) % endTimecode;
+            window.driver.SetTime(time);
+            driver.Draw();
+
+            render();
+
+            requestAnimationFrame(animate.bind(null, timeout, endTimecode));
+        }
+
+        /**
+         * Callback executed upon resizing the window.
+         */
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        /**
+         * Render the A-Frame scene.
+         */
+        function render() {
+            const time = Date.now() * 0.001;
+            window.renderer.render(window.scene, window.camera);
+        }
+
+
+        /**
+         * A-Frame component for a USDz model.
+         */
+         AFRAME.registerComponent('usdz-model', {
+            schema: {
+                src: {
+                    type: 'asset',
+                    default: '',
+                },
+            },
+
+            init: async function() {
+                if (this.data.src.length === 0) {
+                    return;
+                }
+
+                await this.load(this.data.src);
+            },
+
+            update: async function(newData) {
+                if (Object.keys(newData).length === 0 || newData.src.length === 0) {
+                    return;
+                }
+
+                if (this.data.src !== newData.src) {
+                    this.remove();
+                    await this.load(newData.src);
+                }
+            },
+
+            remove: function() {
+                this.el.removeObject3D('mesh');
+            },
+
+            load: async function(usdzFilename) {
+                const extensionSegments = usdzFilename.split('.');
+                const extension = extensionSegments[extensionSegments.length - 1];
+                const filePathSegments = usdzFilename.split('/');
+                const filePath = filePathSegments[filePathSegments.length - 1];
+
+                const usdFile = await loadUSDPromise(usdzFilename)
+                try {
+                    Usd.FS.createDataFile('/', filePath, new Uint8Array(usdFile), true, true, true);
+                } catch (ex) {
+                    console.error(ex);
+                }
+
+                const renderInterface = new RenderDelegateInterface(filePath);
+                const driver = /*window.driver =*/ new Usd.HdWebSyncDriver(renderInterface, filePath);
+                driver.Draw();
+
+                const stage = window.usdStage = window.driver.GetStage();
+                const endTimeCode = stage.GetEndTimeCode();
+                animate(1000 / stage.GetTimeCodesPerSecond(), endTimeCode);
+
+                const hydraMeshRoot = new THREE.Object3D();
+                for (const hydraMesh of Object.values(renderInterface.meshes)) {
+                    hydraMeshRoot.add(hydraMesh._mesh);
+                }
+                this.el.setAttribute('id', filePath);
+                this.el.setObject3D('mesh', hydraMeshRoot)
+                this.el.emit('model-loaded', {
+                    format: 'usdz',
+                    model: filename,
+                });
+            },
+        });
+
+
+        Promise.all([loadUSDPromise(), getUsdModule(), initializeScene()])
+            .then(([usdFile, Usd]) => {
+                window.Usd = Usd;
+                window.usdRoot = new THREE.Group();
+
+                let extension = filename.split('.')[1];
+                let inputFile = 'input.' + extension;
+
+                Usd.FS.createDataFile('/', inputFile, new Uint8Array(usdFile), true, true, true);
+
+                let renderInterface = new RenderDelegateInterface(inputFile);
+                let driver = window.driver = new Usd.HdWebSyncDriver(renderInterface, inputFile);
+                driver.Draw();
+
+                const stage = window.usdStage = window.driver.GetStage();
+                const endTimeCode = stage.GetEndTimeCode();
+                animate(1000 / stage.GetTimeCodesPerSecond(), endTimeCode);
+
+                const usdEntity = document.createElement('a-entity');
+                usdEntity.setAttribute('id', filename);
+                usdEntity.setAttribute('usdz-model', `src: url(${filename})`);
+                if (filename.toLowerCase().includes('usd_cookie.usdz')) {
+                    usdEntity.setAttribute('position', '0.0 4.88 5.1');
+                    usdEntity.setAttribute('rotation', '0.0 180.0 -53.72');
+                    usdEntity.setAttribute('scale', '5.0 5.0 5.0');
+                } else if (filename.toLocaleLowerCase().includes('zemi.usdz')) {
+                    usdEntity.setAttribute('position', '0.0 0.0 2.0');
+                    usdEntity.setAttribute('rotation', '0.0 0.0 0.0');
+                    usdEntity.setAttribute('scale', '10.0 10.0 10.0');
+                }
+
+                const sceneEl = document.querySelector('a-scene');
+                sceneEl.appendChild(usdEntity);
+            });
+    </script>
+
+
+    <!-- A-Frame scene setup: -->
+    <a-scene debug="true" inspector="url: https://cdn.jsdelivr.net/gh/aframevr/aframe-inspector@master/dist/aframe-inspector.min.js">
+        <a-assets>
+            <a-mixin
+                id="marker"
+                geometry="primitive: plane; width: 0.02; height: 0.02"
+                material="color: red"
+            ></a-mixin>
+        </a-assets>
+
+        <a-entity
+            id="camera"
+            camera
+            look-controls
+            wasd-controls
+            position="0.0 4.0 8.0"
+        ></a-entity>
+
+        <a-entity
+            mixin="marker"
+            position="-2.5 0.7 0.01"
+        ></a-entity>
+
+        <a-entity position="2.0 5.25 2.25448">
+            <a-plane
+                position="1.286 -2.120 -0.01"
+                color="#CCC"
+                height="10"
+                width="10"
+                material="color: #ffffff; opacity: 0.7; height: 10; width: 10"
+                geometry="height: 5.02; width: 3.04"
+            ></a-plane>
+
+            <a-entity
+                position="0.0 0.0 0.0"
+                text="anchor: left; width: 5.0; color: #000000; value: Zemí Cohoba Stand"
+            ></a-entity>
+            <a-entity
+                position="0.0 -0.2 0.0"
+                text="anchor: left; width: 3.5; color: #000000; value: A.D. 974-1020"
+            ></a-entity>
+            <a-entity
+                position="0.0 -0.4 0.0"
+                text="anchor: left; width: 2.5; color: #000000; baseline: top; value: Creative sculptural expression for the Taíno peoples was intertwined with spirituality, ceremony, and political power. Spanish accounts describe how zemí figures were used as stands, reliquaries, or personal adornment. This particular zemí was likely used in ceremonies performed at prescribed times throughout the year involving a vegetal entheogen known as cohoba. A ground up hallucinogenic powder or paste would be placed on the top of the stand, and ceremonial participants would inhale the cohoba through snuff tubes. The effects of such ritual acts are visible in the zemí itself: the emaciated look of the figure may represent someone who had been fasting, and watering eyes would have accompanied the inhalation of such substances. The exceptional preservation of this zemí suggests that it was carefully housed and revered, perhaps passed down for centuries. Without evidence of burial, it is likely that the caretakers of this zemí eventually deposited this special figure in a cave, many of the surviving Taíno wooden sculptures have been recovered from cave contexts. \n\n In 1954, Londoner Edna Dakeyne wrote to Rene d'Harnoncourt at The Museum of Primitive Art to offer the sculpture, which accompanies Edna in a 1938 portrait of her painted by English painter Carel Weight. A project in the UK documenting pre-Hispanic sculptural arts in various museum collections performed AMS radiocarbon dating on the Rockefeller zemí cohoba stand, data from the four dates and a Guaiacum growth model produced by the project yielded a range of the date of creation between A.D. 974-1020."
+            ></a-entity>
+        </a-entity>
+
+        <a-entity
+            environment="skyType: gradient; skyColor: #858688; horizonColor: #c0c1c6; ground: hills; groundTexture: walkernoise;"
+        ></a-entity>
+
+        <a-entity
+            id="pointLight"
+            light="type: point; intensity: 0.25"
+            position="0 3 3"
+        ></a-entity>
+
+        <a-sky
+            color="#ECECEC"
+        ></a-sky>
+    </a-scene>
+
+</body>
+</html>

@@ -1,0 +1,285 @@
+<!doctype html>
+<html>
+<body style="margin:0;">
+  <script src="coi-serviceworker.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.js"></script>
+  <script src="emHdBindings.js" type="text/javascript"></script>
+  <script type="module">
+    import { RenderDelegateInterface } from "./ThreeJsRenderDelegate.js"
+    import { RGBELoader } from 'https://cdn.skypack.dev/three@v0.128.0/examples/jsm/loaders/RGBELoader.js';
+    import { OrbitControls } from 'https://cdn.skypack.dev/three@v0.128.0/examples/jsm/controls/OrbitControls.js';
+    
+    let scene;
+    let defaultTexture;
+
+    let params = (new URL(document.location)).searchParams;
+    let name = params.get("name");
+
+    let filename = params.get("file") || 'simpleShading.usda';
+
+    // Load the usd file
+    let loadUSDPromise = new Promise( (resolve, reject) => {
+      let req = new XMLHttpRequest();
+      req.open("GET", filename, true);
+      req.responseType = "arraybuffer";
+
+      req.onload = function (oEvent) {
+        let arrayBuffer = req.response; // Note: not oReq.responseText
+        if (arrayBuffer) {
+          resolve(arrayBuffer);
+        } else {
+          reject();
+        }
+      };
+
+      req.send(null);
+    });
+
+    const initPromise = init();
+
+    Promise.all([loadUSDPromise, getUsdModule(), initPromise]).then(async ([usdFile, Usd]) => {
+      window.Usd = Usd;
+      animate();
+      if (filename)
+        loadUsdFileFromArrayBuffer(filename, usdFile);
+    });
+
+    var currentFileName = undefined;
+    var timeout = 40;
+    var endTimecode = 1;
+
+    function loadUsdFileFromArrayBuffer(filename, usdFile) {
+      let parts = filename.split('.');
+      let extension = parts[parts.length - 1];
+      extension = extension.split('?')[0];
+      // random filename allows to use multiple files at the same time.
+      // this implementation currently clears the old file.
+      let fileName = (Math.random() + 1).toString(36).substring(7);
+      let inputFile = fileName + "." + extension;
+
+      Usd.FS.createDataFile('/', inputFile, new Uint8Array(usdFile), true, true, true);
+
+      // clear existing objects
+      window.usdRoot.clear();
+      if (currentFileName) {
+        Usd.FS.unlink(currentFileName, true);
+      }
+      currentFileName = inputFile;
+
+      let renderInterface = new RenderDelegateInterface(inputFile);
+      let driver = window.driver = new Usd.HdWebSyncDriver(renderInterface, inputFile);
+
+      driver.Draw();
+
+      const stage = window.usdStage = window.driver.GetStage();
+      endTimecode = stage.GetEndTimeCode();
+      timeout = 1000 / stage.GetTimeCodesPerSecond();
+      
+      // adjust camera framing
+      fitCameraToSelection(window.camera, window._controls, [window.usdRoot]);
+    }
+
+    // adjusted from https://discourse.threejs.org/t/camera-zoom-to-fit-object/936/24
+    function fitCameraToSelection(camera, controls, selection, fitOffset = 1.5) {
+      const size = new THREE.Vector3();
+      const center = new THREE.Vector3();
+      const box = new THREE.Box3();
+      
+      box.makeEmpty();
+      for(const object of selection) {
+        box.expandByObject(object);
+      }
+
+      box.getSize(size);
+      box.getCenter(center );
+
+      const maxSize = Math.max(size.x, size.y, size.z);
+      const fitHeightDistance = maxSize / (2 * Math.atan(Math.PI * camera.fov / 360));
+      const fitWidthDistance = fitHeightDistance / camera.aspect;
+      const distance = fitOffset * Math.max(fitHeightDistance, fitWidthDistance);
+
+      const direction = controls.target.clone()
+        .sub(camera.position)
+        .normalize()
+        .multiplyScalar(distance);
+
+      controls.maxDistance = distance * 10;
+      controls.target.copy(center);
+
+      camera.near = distance / 100;
+      camera.far = distance * 100;
+      camera.updateProjectionMatrix();
+
+      camera.position.copy(controls.target).sub(direction);
+
+      controls.update();
+    }
+
+    async function init() {
+      const camera = window.camera = new THREE.PerspectiveCamera( 27, window.innerWidth / window.innerHeight, 1, 3500 );
+      camera.position.z = params.get('cameraZ') || 7;
+      camera.position.y = params.get('cameraY') || 7;
+      camera.position.x = params.get('cameraX') || 0;
+
+      const scene = window.scene = new THREE.Scene();
+      scene.background = new THREE.Color(0xffffff);
+
+      scene.add( new THREE.AmbientLight( 0x111111 ) );
+
+      let pointLight = new THREE.PointLight( 0xff8888 );
+      pointLight.position.set( -30, 20, 220 );
+      pointLight.castShadow = true;
+      pointLight.shadow.camera.near = 8;
+      pointLight.shadow.camera.far = 1000;
+      pointLight.shadow.mapSize.width = 1024;
+      pointLight.shadow.mapSize.height = 1024;
+      pointLight.shadow.bias = - 0.002;
+
+      pointLight.shadow.radius = 4;
+      pointLight.shadow.samples = 8;
+      scene.add( pointLight );
+
+      const usdRoot = window.usdRoot = new THREE.Group();
+      usdRoot.name = "USD Root";
+      scene.add(usdRoot);
+
+      const renderer = window.renderer = new THREE.WebGLRenderer( { antialias: true } );
+      renderer.setPixelRatio( window.devicePixelRatio );
+      renderer.setSize( window.innerWidth, window.innerHeight );
+      renderer.toneMapping = THREE.CineonToneMapping;
+      renderer.toneMappingExposure = 2;
+      renderer.shadowMap.enabled = false;
+      renderer.shadowMap.type = THREE.VSMShadowMap;
+
+      const envMapPromise = new Promise(resolve => {
+        const pmremGenerator = new THREE.PMREMGenerator(renderer);
+				pmremGenerator.compileCubemapShader();
+        new RGBELoader().load('environments/helicopter-landing-pad-vis-4K.hdr', (texture) => {
+          const hdrRenderTarget = pmremGenerator.fromEquirectangular(texture);
+
+          texture.mapping = THREE.EquirectangularReflectionMapping;
+          texture.needsUpdate = true;
+          window.envMap = hdrRenderTarget.texture;
+          resolve();
+        });
+      });
+
+      document.body.appendChild( renderer.domElement );
+      const controls = window._controls = new OrbitControls( camera, renderer.domElement );
+      controls.update();
+
+      window.addEventListener( 'resize', onWindowResize );
+
+      renderer.domElement.addEventListener("drop", dropHandler);
+      renderer.domElement.addEventListener("dragover", dragOverHandler);
+
+      return envMapPromise;
+    }
+
+    // A little helper. Press space to pause/enable rendering. Useful when looking at animated scenes.
+    let stop = false;
+    document.body.onkeyup = function(e){
+      if(e.keyCode == 32){
+        stop = !stop;
+      }
+    }
+
+    async function animate() {
+
+      if (stop) {
+        requestAnimationFrame( animate.bind(null, timeout, endTimecode) );
+        return;
+      }
+
+      window._controls.update();
+      let secs = new Date().getTime() / 1000;
+      await new Promise(resolve => setTimeout(resolve, 10));
+      const time = secs * (1000 / timeout) % endTimecode;
+      
+      if (window.driver) {
+        window.driver.SetTime(time);
+        window.driver.Draw();
+      }
+
+      render();
+
+      requestAnimationFrame( animate.bind(null, timeout, endTimecode) );
+    }
+
+    function onWindowResize() {
+
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+
+      renderer.setSize( window.innerWidth, window.innerHeight );
+
+    }
+
+    function render() {
+
+      const time = Date.now() * 0.001;
+
+      window.renderer.render( window.scene, window.camera );
+
+    }
+
+    async function loadFile(fileOrHandle) {
+      let file = undefined;
+      try {
+        if(fileOrHandle.getFile !== undefined) {
+          file = await fileOrHandle.getFile();
+        }
+        else
+          file = fileOrHandle;
+
+        var reader = new FileReader();
+        reader.onload = function(event) {
+          loadUsdFileFromArrayBuffer(file.name, event.target.result);
+        };
+        reader.readAsArrayBuffer(file);
+      }
+      catch(ex) {
+        console.warn("Error loading file", fileOrHandle, ex);
+      }
+    }
+    
+    function testAndLoadFile(file) {
+      let ext = file.name.split('.').pop();
+      console.log(file.name + ", " + file.size + ", " + ext);
+      if(ext == 'usd' || ext == 'usdz' || ext == 'usda' || ext == 'usdc') {
+        loadFile(file);
+      }
+    }
+    
+    function dropHandler(ev) {
+      console.log('File(s) dropped');
+
+      // Prevent default behavior (Prevent file from being opened)
+      ev.preventDefault();
+
+      if (ev.dataTransfer.items)
+      {
+        for (var i = 0; i < ev.dataTransfer.items.length; i++)
+        {
+          let item = ev.dataTransfer.items[i];
+          if (item.kind === 'file')
+          {
+            var file = item.getAsFile();
+            testAndLoadFile(file);
+          }
+        }
+      } else {
+        for (var i = 0; i < ev.dataTransfer.files.length; i++) {
+          let file = ev.dataTransfer.files[i];
+          testAndLoadFile(file);
+        }
+      }
+    }
+
+    function dragOverHandler(ev) {
+      ev.preventDefault();
+    }
+  </script>
+  <div id="container"></div>
+</body>
+</html>
