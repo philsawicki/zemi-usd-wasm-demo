@@ -8,6 +8,8 @@ This project is a demonstration web experience of the [Zemí artifact provided b
 
 Head to [https://philsawicki.github.io/zemi-usd-wasm-demo](https://philsawicki.github.io/zemi-usd-wasm-demo) experience the live project, and use the <kbd>W</kbd>,  <kbd>A</kbd>,<kbd>S</kbd>,<kbd>D</kbd>, or arrow keys of the keyboard along with dragging the mouse cursor to navigate the environment.
 
+To open the inspector, and interactively edit the scene, press <kbd>CTRL</kbd> + <kbd>ALT</kbd> + <kbd>I</kbd>.
+
 ## Building
 
 ### Requirements

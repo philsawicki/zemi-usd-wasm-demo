@@ -2,7 +2,7 @@
   "name": "zemi-usd-wasm-demo",
   "version": "1.0.0",
   "description": "Demonstration experience of the Zemí artifact from the MET using a WebAssembly build of Pixar's USD.",
-  "main": "src/index.js",
+  "browser": "src/index.js",
   "scripts": {
     "build": "webpack --config=webpack.config.js",
     "build:watch": "npm run build -- --watch --progress",
@@ -13,7 +13,9 @@
   },
   "author": "Philippe Sawicki (https://philippesawicki.com)",
   "license": "MIT",
+  "homepage": "https://github.com/philsawicki/zemi-usd-wasm-demo",
   "dependencies": {
+    "coi-serviceworker": "^0.1.6",
     "webpack": "^5.74.0"
   },
   "devDependencies": {

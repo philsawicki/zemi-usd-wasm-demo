@@ -3,6 +3,7 @@
 const path = require('path');
 
 const CopyPlugin = require('copy-webpack-plugin');
+const HtmlWebpackPlugin = require('html-webpack-plugin');
 
 
 module.exports = {
@@ -10,12 +11,29 @@ module.exports = {
     entry: './src/index.js',
     output: {
         path: path.resolve(__dirname, 'dist'),
-        filename: 'bundle.js',
+        filename: 'bundle.[contenthash].js',
+        environment: { 
+            dynamicImport: true, 
+            module: true,
+        },
     },
     plugins: [
+        new HtmlWebpackPlugin({
+            template: path.resolve(__dirname, './src/index.html'),
+            inject: 'head',
+            scriptLoading: 'blocking',
+        }),
         new CopyPlugin({
             patterns: [
-                'src',
+                {
+                    from: 'src',
+                    to: './', // Resolves to: `${output.path}`
+                    globOptions: {
+                        ignore: [
+                            '**/index.html',
+                        ],
+                    },
+                },
             ],
         }),
     ],
@@ -24,6 +42,11 @@ module.exports = {
             'crypto': false,
             'fs': false,
             'path': false,
+            'perf_hooks': false,
         },
+    },
+    externalsPresets: {
+        web: false,
+        webAsync: true,
     },
 };
